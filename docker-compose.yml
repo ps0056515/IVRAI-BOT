@@ -1,0 +1,37 @@
+version: "3.9"
+
+# Two deployable services: `voice` (STT/LLM/TTS + static demo) and `interview` (control-plane API, scaffold).
+services:
+  voice:
+    build:
+      context: .
+      dockerfile: services/voice/Dockerfile
+    ports:
+      - "8081:8080"   # static demo (host:container); 8080 often busy on the host
+      - "8765:8765"   # WebSocket
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_DEVICE=cpu
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-haiku-4-5}
+      - BOT_SYSTEM_PROMPT=${BOT_SYSTEM_PROMPT:-You are a helpful concise voice assistant.}
+    restart: unless-stopped
+    volumes:
+      - whisper-cache:/root/.cache/huggingface
+
+  interview:
+    build:
+      context: .
+      dockerfile: services/interview/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Browser-facing hints when opening /docs on the host; must match host port mapping for `voice`
+      - VOICE_WS_PUBLIC_URL=ws://localhost:8765
+      - VOICE_HTTP_PUBLIC_URL=http://localhost:8081
+    depends_on:
+      - voice
+    restart: unless-stopped
+
+volumes:
+  whisper-cache:

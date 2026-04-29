@@ -1,0 +1,5 @@
+faster-whisper==1.1.1
+anthropic>=0.40.0
+websockets>=13.0
+gtts>=2.5.1
+numpy>=1.26.0

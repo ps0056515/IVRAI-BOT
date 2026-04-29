@@ -1,0 +1,74 @@
+openapi: 3.0.3
+info:
+  title: Interview & Assessment Platform
+  version: 0.1.0
+  description: |
+    Control-plane HTTP API. Voice STT/LLM/TTS is a **separate** service; see `voice-websocket.md`
+    for the media contract.
+
+servers:
+  - url: http://localhost:8000
+    description: Local (default `INTERVIEW_PORT`)
+
+paths:
+  /health:
+    get:
+      summary: Liveness
+      operationId: health
+      tags: [ops]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /v1/integrations:
+    get:
+      summary: Public URLs for the voice service (for clients)
+      operationId: integrations
+      tags: [integrations]
+      responses:
+        "200":
+          description: Hints
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicIntegrationInfo"
+
+  /v1/interview-sessions:
+    post:
+      summary: (Planned) Create an interview session
+      operationId: createInterviewSession
+      tags: [interview]
+      responses:
+        "501":
+          description: Not implemented yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    PublicIntegrationInfo:
+      type: object
+      required: [voice_websocket_url, voice_demo_ui_url]
+      properties:
+        voice_websocket_url:
+          type: string
+          example: ws://localhost:8765
+        voice_demo_ui_url:
+          type: string
+          example: http://localhost:8080
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
