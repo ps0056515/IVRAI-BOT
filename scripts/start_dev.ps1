@@ -29,14 +29,17 @@ $sport = if ($env:STATIC_PORT) { $env:STATIC_PORT } else { "8080" }
 $aport = if ($env:INTERVIEW_PORT) { $env:INTERVIEW_PORT } else { "8000" }
 
 Write-Host "[start] WebSocket (voice) :$vport  |  static :$sport  |  interview API :$aport"
+Write-Host "[start] Note: full stack (postgres+redis) is easiest via docker compose."
 
 $voice = Start-Process -FilePath "python" -ArgumentList "server.py" -WorkingDirectory $root -PassThru -WindowStyle Minimized
 $static = Start-Process -FilePath "python" -ArgumentList "static_server.py" -WorkingDirectory $root -PassThru -WindowStyle Minimized
 $api = Start-Process -FilePath "python" -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", $aport -WorkingDirectory "$root\services\interview" -PassThru -WindowStyle Minimized
+$worker = Start-Process -FilePath "python" -ArgumentList "-m", "celery", "-A", "app.worker.celery_app.celery_app", "worker", "-Q", "crm_automations", "--loglevel=info" -WorkingDirectory "$root\services\interview" -PassThru -WindowStyle Minimized
 
 Write-Host ""
 Write-Host "  Voice UI:      http://localhost:$sport"
 Write-Host "  WebSocket:     ws://localhost:$vport"
 Write-Host "  Interview API: http://localhost:$aport"
+Write-Host "  CRM Webapp:    http://localhost:$aport/crm"
 Write-Host "  API docs:      http://localhost:$aport/docs"
-Write-Host "Close the minimized python windows to stop, or end those PIDs: $($voice.Id), $($static.Id), $($api.Id)"
+Write-Host "Close the minimized python windows to stop, or end those PIDs: $($voice.Id), $($static.Id), $($api.Id), $($worker.Id)"

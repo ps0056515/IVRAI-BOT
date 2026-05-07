@@ -1,74 +1,302 @@
 openapi: 3.0.3
 info:
   title: Interview & Assessment Platform
-  version: 0.1.0
-  description: |
-    Control-plane HTTP API. Voice STT/LLM/TTS is a **separate** service; see `voice-websocket.md`
-    for the media contract.
+  version: 1.0.0
+  description: API for IVR + CRM admissions flow with Postgres + Redis worker orchestration.
 
 servers:
   - url: http://localhost:8000
-    description: Local (default `INTERVIEW_PORT`)
+    description: Local
 
 paths:
   /health:
     get:
-      summary: Liveness
-      operationId: health
       tags: [ops]
+      summary: Liveness
       responses:
         "200":
           description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
 
   /v1/integrations:
     get:
-      summary: Public URLs for the voice service (for clients)
-      operationId: integrations
       tags: [integrations]
+      summary: Public voice endpoints for clients
       responses:
         "200":
-          description: Hints
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PublicIntegrationInfo"
+          description: Integration hints
 
-  /v1/interview-sessions:
+  /v1/auth/login:
     post:
-      summary: (Planned) Create an interview session
-      operationId: createInterviewSession
-      tags: [interview]
+      tags: [auth]
+      summary: Login and get bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
       responses:
-        "501":
-          description: Not implemented yet
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+        "200":
+          description: Auth token
+
+  /v1/calls/webhook:
+    post:
+      tags: [crm]
+      summary: Call-end ingest webhook
+      parameters:
+        - in: header
+          name: x-webhook-secret
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [call_id, caller_number]
+              properties:
+                call_id: { type: string }
+                caller_number: { type: string }
+                caller_name: { type: string, nullable: true }
+                duration_sec: { type: integer }
+                ivr_key: { type: string, nullable: true }
+                unit: { type: string, nullable: true }
+                transcript: { type: string }
+                assistant_reply: { type: string, nullable: true }
+                recording_url: { type: string, nullable: true }
+                started_at: { type: string, nullable: true }
+                ended_at: { type: string, nullable: true }
+                branch_interest: { type: string, nullable: true }
+                batch_preference: { type: string, nullable: true }
+                course_interest: { type: string, nullable: true }
+                source: { type: string }
+                latency_ms: { type: integer, nullable: true }
+                stt_ms: { type: integer, nullable: true }
+                llm_ms: { type: integer, nullable: true }
+                tts_ms: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Processed
+        "401":
+          description: Bad webhook secret
+
+  /v1/leads:
+    get:
+      tags: [crm]
+      summary: List leads
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: unit
+          schema: { type: string }
+        - in: query
+          name: stage
+          schema: { type: string }
+        - in: query
+          name: lead_band
+          schema: { type: string, enum: [hot, warm, cold] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+      responses:
+        "200":
+          description: Lead list
+
+  /v1/leads/{leadId}:
+    get:
+      tags: [crm]
+      summary: Lead detail with timeline + automation jobs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: leadId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Lead detail
+        "404":
+          description: Not found
+
+  /v1/leads/{leadId}/stage:
+    post:
+      tags: [crm]
+      summary: Update lead stage
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: leadId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage:
+                  type: string
+                  enum: [enquiry, demo, counselling, fee_payment, enrolled, placed, support]
+                note: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Updated
+
+  /v1/leads/{leadId}/counselling:
+    post:
+      tags: [crm]
+      summary: Counselling notes update
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: leadId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated
+
+  /v1/leads/{leadId}/payments:
+    post:
+      tags: [crm]
+      summary: Record payment event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: leadId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated
+
+  /v1/analytics/admissions-pipeline:
+    get:
+      tags: [crm]
+      summary: Stage-wise pipeline counts
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Pipeline counts
+
+  /v1/leads/{leadId}/conversation:
+    get:
+      tags: [crm]
+      summary: Conversation replay turns for QA
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: leadId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Conversation turns
+
+  /v1/calls/{callId}/recording:
+    get:
+      tags: [crm]
+      summary: Download call turn recording
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: callId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Audio file
+
+  /v1/automation/jobs:
+    get:
+      tags: [crm]
+      summary: List automation jobs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Job list
+
+  /v1/automation/jobs/{jobId}/retry:
+    post:
+      tags: [crm]
+      summary: Retry one automation job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Retry queued
+
+  /v1/providers/callback:
+    post:
+      tags: [crm]
+      summary: Delivery callback from provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_message_id, status]
+              properties:
+                provider_message_id: { type: string }
+                status: { type: string }
+                error: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Callback accepted
+
+  /v1/sla/breaches:
+    get:
+      tags: [crm]
+      summary: List SLA-breached leads
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Breach list
+
+  /v1/ops/metrics:
+    get:
+      tags: [crm]
+      summary: Operational metrics snapshot
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Metrics
+
+  /v1/ops/retention-run:
+    post:
+      tags: [crm]
+      summary: Run retention cleanup for conversation artifacts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 7, maximum: 3650, default: 90 }
+      responses:
+        "200":
+          description: Retention summary
 
 components:
-  schemas:
-    PublicIntegrationInfo:
-      type: object
-      required: [voice_websocket_url, voice_demo_ui_url]
-      properties:
-        voice_websocket_url:
-          type: string
-          example: ws://localhost:8765
-        voice_demo_ui_url:
-          type: string
-          example: http://localhost:8080
-
-    Error:
-      type: object
-      properties:
-        detail:
-          type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
